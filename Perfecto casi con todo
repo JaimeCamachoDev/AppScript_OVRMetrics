@@ -1,0 +1,358 @@
+function procesarDatosYCrearGraficos() {
+    var hoja = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var datos = hoja.getDataRange().getValues();
+
+    if (datos.length <= 1) {
+        Logger.log("No hay datos suficientes en la hoja.");
+        return;
+    }
+
+    // --- Detección y configuración de columnas ---
+    var ultimaColumnaIndex = datos[0].length - 1;
+    var ultimaColumnaNombre = datos[0][ultimaColumnaIndex];
+    Logger.log("Última columna detectada: " + ultimaColumnaNombre);
+
+    var columnasDeseadas = [
+        "Time Stamp", "app_gpu_time_microseconds", "timewarp_gpu_time_microseconds",
+        "gpu_utilization_percentage", "cpu_utilization_percentage", "average_frame_rate",
+        "stale_frame_count", "available_memory_MB", "screen_tear_count", "max_repeated_frames",
+        "early_frame_count", "stale_frames_consecutive"
+    ];
+    columnasDeseadas.push(ultimaColumnaNombre); // Añadir la última columna
+
+    var encabezados = columnasDeseadas.slice();
+    var indices = columnasDeseadas.map(col => datos[0].indexOf(col)).filter(i => i !== -1);
+    var nuevosDatos = datos.slice(1).map(fila => indices.map(i => fila[i]));
+
+    // --- Cálculo de normalized_gpu_time ---
+    var indiceGpuTime = columnasDeseadas.indexOf("app_gpu_time_microseconds");
+    var maxGpuTime = NaN;
+    if (indiceGpuTime !== -1) {
+        maxGpuTime = Math.max(...nuevosDatos.map(row => row[indiceGpuTime]));
+    }
+
+    if (indiceGpuTime !== -1 && !isNaN(maxGpuTime) && isFinite(maxGpuTime) && maxGpuTime !== 0) {
+        if (!encabezados.includes("normalized_gpu_time")) {
+            encabezados.splice(encabezados.length - 1, 0, "normalized_gpu_time"); // Insertar antes de la última
+
+            for (var i = 0; i < nuevosDatos.length; i++) {
+                var normalizedValue = Math.round((nuevosDatos[i][indiceGpuTime] / maxGpuTime) * 100);
+                nuevosDatos[i].splice(nuevosDatos[i].length - 1, 0, normalizedValue); // Insertar antes de la última
+            }
+        }
+    } else {
+        Logger.log("No se pudo calcular 'normalized_gpu_time'.");
+    }
+
+    // --- Inserción de filas adicionales ---
+    var filasParaGraficos = 20 * 4;
+    var filaAnalisisGeneralEstimada = datos.length + 2 + 2 + 2 + 2;
+    var filasNecesarias = filaAnalisisGeneralEstimada + filasParaGraficos + 150;
+    var filasActuales = hoja.getMaxRows();
+
+    if (filasNecesarias > filasActuales) {
+        hoja.insertRowsAfter(filasActuales, filasNecesarias - filasActuales);
+        Logger.log("Se insertaron " + (filasNecesarias - filasActuales) + " filas adicionales.");
+    }
+
+    // --- Limpiar y escribir datos ---
+    hoja.clear();
+    hoja.getRange(1, 1, 1, encabezados.length).setValues([encabezados]);
+    hoja.getRange(2, 1, nuevosDatos.length, encabezados.length).setValues(nuevosDatos);
+
+    // --- Descripciones, Promedios, Análisis ---
+    var filaDescripcion = hoja.getLastRow() + 2;
+    var descripciones = [
+        "", "Tiempo de renderizado de un cuadro por la GPU (µs).",
+        "Tiempo de renderizado de timewarp por la GPU (µs), relacionado con latencia.",
+        "Porcentaje de uso de la GPU. >90% puede indicar cuello de botella.",
+        "Porcentaje de uso de la CPU.",
+        "Cuadros por segundo (FPS) de la aplicación. FPS bajos indican problemas de rendimiento.",
+        "Cantidad de cuadros no renderizados a tiempo.",
+        "Memoria RAM disponible (MB).",
+        "Cantidad de veces que ocurre screen tearing (desgarro de pantalla).",
+        "Cantidad máxima de cuadros repetidos consecutivamente.",
+        "Número de cuadros renderizados antes de tiempo.",
+        "Número de cuadros consecutivos reutilizados por no llegar a tiempo.",
+        "Tiempo de GPU normalizado (%)."
+    ];
+
+     //Ajustar en caso de que normalized_gpu_time no se calcule.
+     if (encabezados.indexOf("normalized_gpu_time") === -1) {
+        descripciones[descripciones.length -1] = "";
+    }
+
+    hoja.getRange(filaDescripcion, 1, 1, descripciones.length).setValues([descripciones]);
+
+
+    var filaPromedios = filaDescripcion + 2;
+    var filaAnalisisColumnas = filaPromedios + 2;
+    var filaAnalisisGeneral = filaAnalisisColumnas + 2;
+    var filaFinTabla = filaAnalisisGeneral + 1; // Incluye la fila de análisis general
+
+
+    // --- Formato de tabla ---
+     var numFilasTabla = Math.max(1, filaFinTabla - 1 + 1);
+     var rangoTabla = hoja.getRange(1, 1, numFilasTabla, encabezados.length);
+
+
+    rangoTabla.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+        .setVerticalAlignment("middle")
+        .setHorizontalAlignment("center");
+
+
+        var promedios = encabezados.map((col, i) => {
+        if (i === 0) return "Promedio:";
+        var index = columnasDeseadas.indexOf(col);
+        if (index !== -1) {
+            var valores = nuevosDatos.map(row => row[index]).filter(v => !isNaN(v) && v !== ""); // Filtrar valores no numéricos y vacíos
+            return valores.length > 0 ? (valores.reduce((a, b) => a + b, 0) / valores.length).toFixed(2) : "N/A";
+        }
+        return "N/A";
+    });
+    hoja.getRange(filaPromedios, 1, 1, encabezados.length).setValues([promedios]);
+
+
+
+    // --- Análisis por columna ---
+   var analisisColumnasTexto = encabezados.map((columna, index) => {
+    var analisisTexto = "";
+    if (index === 0) {
+        analisisTexto = "Análisis por Columna:";
+    } else {
+        switch (columna) {
+            case "gpu_utilization_percentage":
+                var promedioGPU = parseFloat(promedios[index]);
+                analisisTexto = promedioGPU > 90 ? "GPU ALTA (>90%). Cuello de botella GPU." :
+                                promedioGPU > 70 ? "GPU Moderada (>70%). Optimización posible." :
+                                "GPU BAJA (<70%). GPU holgada.";
+                break;
+            case "average_frame_rate":
+                var promedioFPS = parseFloat(promedios[index]);
+                analisisTexto = promedioFPS < 60 ? "FPS BAJOS (<60). Rendimiento deficiente." :
+                                promedioFPS < 72 ? "FPS MODERADOS (<72). Mejorar fluidez VR." :
+                                "FPS ALTOS (>= 72). Buen rendimiento VR.";
+                break;
+            case "stale_frame_count":
+                var promedioStaleFrames = parseFloat(promedios[index]);
+                analisisTexto = promedioStaleFrames > 10 ? "Stale Frames ELEVADOS (>10). Problemas de fluidez." :
+                                "Stale Frames BAJOS (<=10). Buen rendimiento.";
+                break;
+            case "cpu_utilization_percentage":
+                var promedioCPU = parseFloat(promedios[index]);
+                analisisTexto = promedioCPU > 85 ? "CPU ALTA (>85%). Posible cuello de botella CPU." :
+                                promedioCPU > 60 ? "CPU Moderada (>60%). Rendimiento OK." :
+                                "CPU BAJA (<60%). CPU holgada.";
+                break;
+            case "available_memory_MB":
+                var promedioMemoria = parseFloat(promedios[index]);
+                analisisTexto = promedioMemoria < 500 ? "MEMORIA BAJA (<500MB). Riesgo de problemas por falta de memoria." :
+                                promedioMemoria < 1000 ? "MEMORIA MODERADA (<1GB). Memoria suficiente, pero vigilar uso." :
+                                "MEMORIA OK (>= 1GB). Buena disponibilidad de memoria.";
+                break;
+            case "timewarp_gpu_time_microseconds":
+                var promedioTimewarp = parseFloat(promedios[index]);
+                analisisTexto = promedioTimewarp > 3000 ? "Timewarp GPU ALTO (>3ms). Latencia timewarp elevada." :
+                                promedioTimewarp > 1500 ? "Timewarp GPU Moderado (>1.5ms). Latencia timewarp aceptable." :
+                                "Timewarp GPU BAJO (<=1.5ms). Buena latencia timewarp.";
+                break;
+           case "normalized_gpu_time":
+                var promedioNormalizedGPU = parseFloat(promedios[index]);
+                analisisTexto = promedioNormalizedGPU > 90 ? "GPU Normalizado ALTO (>90%).  Cuello de botella GPU." :
+                                promedioNormalizedGPU > 70 ? "GPU Normalizado Moderada (>70%).  Optimización posible." :
+                                "GPU Normalizado BAJO (<70%).  GPU holgada.";
+                break;
+             // Puedes agregar más casos 'case' para otras columnas aquí
+        }
+    }
+    return analisisTexto;
+});
+hoja.getRange(filaAnalisisColumnas, 1, 1, encabezados.length).setValues([analisisColumnasTexto]);
+
+
+    // --- Análisis general ---
+
+var analisisGeneralTexto = "";
+var promedioGPUGeneral = parseFloat(promedios[columnasDeseadas.indexOf("gpu_utilization_percentage") + 1]);
+var promedioFPSGeneral = parseFloat(promedios[columnasDeseadas.indexOf("average_frame_rate") + 1]);
+
+if (!isNaN(promedioGPUGeneral) && !isNaN(promedioFPSGeneral)) {
+    if (promedioGPUGeneral > 85 && promedioFPSGeneral < 60) {
+        analisisGeneralTexto = "RENDIMIENTO LIMITADO: GPU Alta y FPS bajos. Cuello de botella significativo en GPU. Optimizar shaders/VFX CRUCIAL.";
+    } else if (promedioGPUGeneral > 70 && promedioFPSGeneral < 72) {
+        analisisGeneralTexto = "RENDIMIENTO MODERADO: GPU y FPS aceptables, pero margen de mejora. Optimizar para VR óptimo.";
+    } else {
+        analisisGeneralTexto = "BUEN RENDIMIENTO: GPU eficiente y FPS altos. Rendimiento general bueno para pruebas.";
+    }
+} else {
+    analisisGeneralTexto = "No se puede realizar análisis general completo por falta de datos GPU/FPS.";
+}
+
+var rangoAnalisisGeneral = hoja.getRange(filaAnalisisGeneral, 1);
+rangoAnalisisGeneral.setValue("ANÁLISIS GENERAL: " + analisisGeneralTexto)
+    .setFontWeight("bold")
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+    .setVerticalAlignment("middle")
+    .setHorizontalAlignment("center");
+hoja.setRowHeight(filaAnalisisGeneral, 50);
+
+// --- Formato condicional de promedios ---
+var reglasFormatoPromedios = [];
+
+function agregarReglaFormato(indiceColumna, condicion, valorCondicion, color) {
+    var regla = SpreadsheetApp.newConditionalFormatRule()
+        .setRanges([hoja.getRange(filaPromedios, indiceColumna + 1, 1, 1)]);
+
+    switch (condicion) {
+        case 'GT':
+            regla.whenNumberGreaterThan(valorCondicion);
+            break;
+        case 'GTE':
+            regla.whenNumberGreaterThanOrEqualTo(valorCondicion);
+            break;
+        case 'LT':
+            regla.whenNumberLessThan(valorCondicion);
+            break;
+        case 'LTE':
+            regla.whenNumberLessThanOrEqualTo(valorCondicion);
+            break;
+        // Puedes agregar más casos según sea necesario (e.g., BETWEEN, EQUAL_TO)
+    }
+
+    regla.setBackground(color).build();
+    reglasFormatoPromedios.push(regla);
+}
+
+// GPU Utilization
+agregarReglaFormato(encabezados.indexOf("gpu_utilization_percentage"), 'GTE', 90, "#f4c7c3"); // Rojo
+agregarReglaFormato(encabezados.indexOf("gpu_utilization_percentage"), 'GTE', 70, "#fce8b2"); // Naranja
+agregarReglaFormato(encabezados.indexOf("gpu_utilization_percentage"), 'LT', 70, "#c6efce");  // Verde
+
+// Average Frame Rate
+agregarReglaFormato(encabezados.indexOf("average_frame_rate"), 'LT', 60, "#f4c7c3");  // Rojo
+agregarReglaFormato(encabezados.indexOf("average_frame_rate"), 'LT', 72, "#fce8b2");  // Naranja
+agregarReglaFormato(encabezados.indexOf("average_frame_rate"), 'GTE', 72, "#c6efce"); // Verde
+
+// Stale Frame Count
+agregarReglaFormato(encabezados.indexOf("stale_frame_count"), 'GTE', 15, "#f4c7c3"); // Rojo
+agregarReglaFormato(encabezados.indexOf("stale_frame_count"), 'GTE', 5, "#fce8b2");  // Naranja
+agregarReglaFormato(encabezados.indexOf("stale_frame_count"), 'LT', 5, "#c6efce");   // Verde
+
+// CPU Utilization
+agregarReglaFormato(encabezados.indexOf("cpu_utilization_percentage"), 'GTE', 85, "#f4c7c3"); // Rojo
+agregarReglaFormato(encabezados.indexOf("cpu_utilization_percentage"), 'GTE', 60, "#fce8b2"); // Naranja
+agregarReglaFormato(encabezados.indexOf("cpu_utilization_percentage"), 'LT', 60, "#c6efce");  // Verde
+
+// Available Memory
+agregarReglaFormato(encabezados.indexOf("available_memory_MB"), 'LT', 500, "#f4c7c3");  // Rojo
+agregarReglaFormato(encabezados.indexOf("available_memory_MB"), 'LT', 1000, "#fce8b2"); // Naranja
+agregarReglaFormato(encabezados.indexOf("available_memory_MB"), 'GTE', 1000, "#c6efce");// Verde
+
+// Timewarp GPU Time
+agregarReglaFormato(encabezados.indexOf("timewarp_gpu_time_microseconds"), 'GTE', 3000, "#f4c7c3"); // Rojo
+agregarReglaFormato(encabezados.indexOf("timewarp_gpu_time_microseconds"), 'GTE', 1500, "#fce8b2"); // Naranja
+agregarReglaFormato(encabezados.indexOf("timewarp_gpu_time_microseconds"), 'LT', 1500, "#c6efce");  // Verde
+
+// Normalized GPU Time
+if(encabezados.indexOf("normalized_gpu_time") !== -1){ //verifica que exista normalized_gpu_time
+    agregarReglaFormato(encabezados.indexOf("normalized_gpu_time"), 'GTE', 90, "#f4c7c3"); // Rojo
+    agregarReglaFormato(encabezados.indexOf("normalized_gpu_time"), 'GTE', 70, "#fce8b2"); // Naranja
+    agregarReglaFormato(encabezados.indexOf("normalized_gpu_time"), 'LT', 70, "#c6efce");  // Verde
+}
+
+hoja.setConditionalFormatRules(reglasFormatoPromedios);
+
+
+    // --- Creación de gráficos ---
+    var posicionFila = filaAnalisisGeneral + 3;
+
+    // Gráfico 1: GPU Utilization y Normalized Render Time (si existe)
+   let columnasGrafico1_Y = ["gpu_utilization_percentage"];
+    if (encabezados.includes("normalized_gpu_time")) {
+        columnasGrafico1_Y.push("normalized_gpu_time");
+    }
+    crearGraficoDobleOAdaptativo(hoja, "Time Stamp", columnasGrafico1_Y, "GPU Utilization & Normalized Render Time", "Time (ms)", "GPU % & Normalized Render Time", 13.88, posicionFila, columnasGrafico1_Y.length > 1);
+    posicionFila += 20;
+
+    // Gráfico 2: FPS y Stale Frames
+    crearGraficoDoble(hoja, "Time Stamp", "average_frame_rate", "stale_frame_count", "FPS & Stale Frames Over Time", "Time (ms)", "FPS & Stale Frames", 72, posicionFila);
+    posicionFila += 20;
+
+    // Gráfico 3: CPU vs GPU Utilization
+    crearGraficoDoble(hoja, "Time Stamp", "cpu_utilization_percentage", "gpu_utilization_percentage", "CPU vs GPU Utilization", "Time (ms)", "Utilization (%)", null, posicionFila);
+    posicionFila += 20;
+
+    // Gráfico 4: Early Frames vs Stale Frames Consecutive
+    crearGraficoDoble(hoja, "Time Stamp", "early_frame_count", "stale_frames_consecutive", "Early Frames vs Stale Frames Consecutive", "Time (ms)", "Frames Count", null, posicionFila);
+
+} // Fin de la función procesarDatosYCrearGraficos
+
+
+function crearGraficoDoble(hoja, colX, colY1, colY2, titulo, ejeX, ejeY, target, filaGrafico) {
+    crearGraficoDobleOAdaptativo(hoja, colX, [colY1, colY2], titulo, ejeX, ejeY, target, filaGrafico, true);
+}
+
+function crearGraficoDobleOAdaptativo(hoja, colX, colYs, titulo, ejeX, ejeY, target, filaGrafico, esDoble) {
+    var datos = hoja.getDataRange().getValues();
+    var encabezados = datos[0];
+    var indexX = encabezados.indexOf(colX) + 1;
+    var indicesY = colYs.map(colY => encabezados.indexOf(colY) + 1);
+
+    if (indexX === 0 || indicesY.includes(0)) {
+        Logger.log("Columnas no encontradas para gráfico: " + titulo);
+        return;
+    }
+
+    var rangoTiempo = hoja.getRange(2, indexX, hoja.getLastRow() - 1); // Datos desde la fila 2
+    var rangosY = indicesY.map(indexY => hoja.getRange(2, indexY, hoja.getLastRow() - 1)); //Datos desde fila 2
+
+    var chartBuilder = hoja.newChart()
+        .setChartType(Charts.ChartType.LINE)
+        .addRange(rangoTiempo);
+        
+    rangosY.forEach((rangoY, index) => {
+        chartBuilder.addRange(rangoY);
+         // Usar el nombre de la columna del encabezado como etiqueta en la leyenda
+        chartBuilder.setOption('series.' + index + '.labelInLegend', colYs[index]);
+
+    });
+
+
+    chartBuilder.setPosition(filaGrafico, 1, 0, 0)
+        .setOption('title', titulo)
+        .setOption('hAxis', { title: ejeX })
+        .setOption('vAxis', { title: ejeY })
+        .setOption('legend', { position: 'right' }); // Leyenda a la derecha
+
+    if (target !== null) {
+        chartBuilder.setOption('vAxis.viewWindow.min', 0); // Valor mínimo del eje Y
+        //Si el target no es null, lo setea como linea objetivo
+        chartBuilder.setOption('series', {
+             0: { curveType: 'function', color: 'red' },
+             1: { curveType: 'function', color: 'blue' },
+            [rangosY.length]: {  // Target como serie adicional
+                type: 'line',
+                color: 'green',
+                lineWidth: 2,
+                pointSize: 0,
+                targetAxisIndex: 1, // Usar un segundo eje Y para el target
+                labelInLegend: 'Target',
+            },
+        });
+
+    } else {
+        //Si no hay target, solo setea los colores y el tipo de curva
+         chartBuilder.setOption('series', {
+             0: { curveType: 'function', color: 'red' },
+             1: { curveType: 'function', color: 'blue' }
+        });
+    }
+
+    if (!esDoble && rangosY.length === 1) {
+      // Ajustes para gráficos de una sola serie (si es necesario en el futuro)
+        chartBuilder.setOption('series', { 0: { curveType: 'function', color: 'blue' } });
+    }
+
+    var chart = chartBuilder.build();
+    hoja.insertChart(chart);
+}
