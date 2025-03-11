@@ -1,0 +1,287 @@
+function procesarDatosYCrearGraficos() {
+    var hoja = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var datos = hoja.getDataRange().getValues();
+
+    if (datos.length <= 1) {
+        Logger.log("No hay datos suficientes en la hoja.");
+        return;
+    }
+
+    // 1️⃣ Analizar los datos
+    var resultado = analizarDatos(datos);
+    var encabezados = resultado.encabezados;
+    var nuevosDatos = resultado.nuevosDatos;
+
+    // 2️⃣ Calcular valores adicionales (Normalized GPU Time y Señal Activa)
+    calcularValoresAdicionales(encabezados, nuevosDatos);
+
+    // 3️⃣ Insertar líneas para gráficos y análisis
+    insertarLineas(hoja, datos);
+
+    // 4️⃣ Escribir datos procesados en la hoja
+    escribirDatos(hoja, encabezados, nuevosDatos);
+
+    // 5️⃣ Aplicar análisis por columna
+    var filaPromedios = crearAnalisisColumnas(hoja, encabezados, nuevosDatos);
+
+    // 6️⃣ Crear análisis general
+    crearAnalisisGeneral(hoja, encabezados, nuevosDatos, filaPromedios);
+
+    // 7️⃣ Aplicar formato condicional
+    aplicarFormatoCondicional(hoja, encabezados, filaPromedios);
+
+    // 8️⃣ Crear gráficos
+    crearGraficos(hoja, encabezados, nuevosDatos);
+}
+/**
+ * 1️⃣ Analizar los datos
+ */
+function analizarDatos(datos) {
+    var ultimaColumnaIndex = datos[0].length - 1;
+    var ultimaColumnaNombre = datos[0][ultimaColumnaIndex];
+
+    var columnasDeseadas = [
+        "Time Stamp", "app_gpu_time_microseconds", "timewarp_gpu_time_microseconds",
+        "gpu_utilization_percentage", "cpu_utilization_percentage", "average_frame_rate",
+        "stale_frame_count", "available_memory_MB", "screen_tear_count", "max_repeated_frames",
+        "early_frame_count", "stale_frames_consecutive"
+    ];
+    columnasDeseadas.push(ultimaColumnaNombre);
+
+    var encabezados = columnasDeseadas.slice();
+    var indices = columnasDeseadas.map(col => datos[0].indexOf(col)).filter(i => i !== -1);
+    var nuevosDatos = datos.slice(1).map(fila => indices.map(i => fila[i]));
+
+    return { encabezados, nuevosDatos };
+}
+/**
+ * 2️⃣ Calcular Normalized GPU Time y Señal Activa
+ */
+function calcularValoresAdicionales(encabezados, nuevosDatos) {
+    var indiceGpuTime = encabezados.indexOf("app_gpu_time_microseconds");
+    var indiceUltimaColumna = encabezados.length - 1;
+    var maxGpuTime = NaN;
+
+    // Agregar columnas si aún no están presentes
+    if (!encabezados.includes("normalized_gpu_time")) {
+        encabezados.splice(encabezados.length - 1, 0, "normalized_gpu_time");
+    }
+    if (!encabezados.includes("señal_activa")) {
+        encabezados.push("señal_activa");
+    }
+
+    if (indiceGpuTime !== -1) {
+        maxGpuTime = Math.max(...nuevosDatos.map(row => row[indiceGpuTime]));
+    }
+
+    for (var i = 0; i < nuevosDatos.length; i++) {
+        // Normalized GPU Time
+        var normalizedValue = (!isNaN(maxGpuTime) && maxGpuTime !== 0) ? Math.round((nuevosDatos[i][indiceGpuTime] / maxGpuTime) * 100) : 0;
+        nuevosDatos[i].splice(nuevosDatos[i].length - 1, 0, normalizedValue);
+
+        // Señal Activa
+        var indiceSeñal = nuevosDatos[i].length - 1;
+        var tieneSeñal = (nuevosDatos[i][indiceSeñal] && nuevosDatos[i][indiceSeñal].toString().trim() !== "") ? 100 : 0;
+        nuevosDatos[i].push(tieneSeñal);
+    }
+}
+/**
+ * 3️⃣ Insertar líneas para gráficos y análisis
+ */
+function insertarLineas(hoja, datos) {
+    var filasParaGraficos = 20 * 4;
+    var filaAnalisisGeneralEstimada = datos.length + 10;
+    var filasNecesarias = filaAnalisisGeneralEstimada + filasParaGraficos + 150;
+    var filasActuales = hoja.getMaxRows();
+
+    if (filasNecesarias > filasActuales) {
+        hoja.insertRowsAfter(filasActuales, filasNecesarias - filasActuales);
+    }
+}
+/**
+ * 4️⃣ Escribir datos en la hoja con formato alineado
+ */
+function escribirDatos(hoja, encabezados, nuevosDatos) {
+    hoja.clear();
+    hoja.getRange(1, 1, 1, encabezados.length).setValues([encabezados]);
+    hoja.getRange(2, 1, nuevosDatos.length, encabezados.length).setValues(nuevosDatos);
+
+    // Aplicar formato a la tabla
+    var rangoTabla = hoja.getRange(1, 1, nuevosDatos.length + 1, encabezados.length);
+    rangoTabla.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+              .setVerticalAlignment("middle")
+              .setHorizontalAlignment("center");
+
+    hoja.autoResizeColumns(1, encabezados.length);
+}
+/**
+ * 5️⃣ Aplicar Análisis por Columna
+ */
+function crearAnalisisColumnas(hoja, encabezados, promedios) {
+    var filaAnalisisColumnas = hoja.getLastRow() + 2;
+    var analisisColumnasTexto = encabezados.map((columna, index) => {
+        if (index === 0) return "Análisis por Columna:";
+        var valorPromedio = parseFloat(promedios[index]);
+        if (isNaN(valorPromedio)) return "N/A";
+
+        switch (columna) {
+            case "gpu_utilization_percentage":
+                return valorPromedio > 90 ? "⚠️ GPU ALTA (>90%) - Cuello de botella" :
+                       valorPromedio > 70 ? "🔶 GPU Moderada - Optimización posible" :
+                                            "✅ GPU Baja - Rendimiento óptimo";
+            case "average_frame_rate":
+                return valorPromedio < 60 ? "⚠️ FPS BAJOS (<60) - Rendimiento deficiente" :
+                       valorPromedio < 72 ? "🔶 FPS Moderados - Mejorar fluidez" :
+                                            "✅ FPS Altos (>=72) - Buen rendimiento";
+            case "cpu_utilization_percentage":
+                return valorPromedio > 85 ? "⚠️ CPU ALTA (>85%) - Cuello de botella" :
+                       valorPromedio > 60 ? "🔶 CPU Moderada - Rendimiento OK" :
+                                            "✅ CPU Baja (<60%) - Rendimiento óptimo";
+            case "available_memory_MB":
+                return valorPromedio < 500 ? "⚠️ MEMORIA BAJA (<500MB) - Riesgo de problemas" :
+                       valorPromedio < 1000 ? "🔶 MEMORIA Moderada (<1GB) - Vigilar uso" :
+                                               "✅ MEMORIA OK (>=1GB) - Sin problemas";
+            case "normalized_gpu_time":
+                return valorPromedio > 90 ? "⚠️ GPU TIME ALTO - Cuello de botella" :
+                       valorPromedio > 70 ? "🔶 GPU TIME Moderado - Optimización posible" :
+                                            "✅ GPU TIME Bajo - Rendimiento óptimo";
+            default:
+                return "";
+        }
+    });
+
+    var rangoAnalisisColumnas = hoja.getRange(filaAnalisisColumnas, 1, 1, encabezados.length);
+    rangoAnalisisColumnas.setValues([analisisColumnasTexto])
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+        .setVerticalAlignment("middle")
+        .setHorizontalAlignment("center");
+
+    return filaAnalisisColumnas;
+}
+/**
+ * 6️⃣ Crear Análisis General
+ */
+function crearAnalisisGeneral(hoja, encabezados, nuevosDatos, filaAnalisisColumnas) {
+    var filaAnalisisGeneral = filaAnalisisColumnas + 2;
+    var promedioGPU = parseFloat(nuevosDatos.map(row => row[encabezados.indexOf("gpu_utilization_percentage")])
+                        .filter(v => !isNaN(v)).reduce((a, b) => a + b, 0) / nuevosDatos.length);
+    var promedioFPS = parseFloat(nuevosDatos.map(row => row[encabezados.indexOf("average_frame_rate")])
+                        .filter(v => !isNaN(v)).reduce((a, b) => a + b, 0) / nuevosDatos.length);
+
+    var analisisGeneralTexto = "No se puede realizar análisis general completo por falta de datos.";
+    if (!isNaN(promedioGPU) && !isNaN(promedioFPS)) {
+        if (promedioGPU > 85 && promedioFPS < 60) {
+            analisisGeneralTexto = "⚠️ RENDIMIENTO LIMITADO: GPU alta y FPS bajos. Cuello de botella en GPU.";
+        } else if (promedioGPU > 70 && promedioFPS < 72) {
+            analisisGeneralTexto = "🔶 RENDIMIENTO MODERADO: GPU y FPS aceptables, pero margen de mejora.";
+        } else {
+            analisisGeneralTexto = "✅ BUEN RENDIMIENTO: GPU eficiente y FPS altos. Rendimiento óptimo.";
+        }
+    }
+
+    var rangoAnalisisGeneral = hoja.getRange(filaAnalisisGeneral, 1);
+    rangoAnalisisGeneral.setValue("📌 ANÁLISIS GENERAL: " + analisisGeneralTexto)
+        .setFontWeight("bold")
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+        .setVerticalAlignment("middle")
+        .setHorizontalAlignment("center");
+    hoja.setRowHeight(filaAnalisisGeneral, 50);
+}
+/**
+ * 7️⃣ Aplicar formato condicional
+ */
+function aplicarFormatoCondicional(hoja, encabezados, filaPromedios) {
+    var reglasFormato = [];
+
+    function agregarReglaFormato(indice, valor, color) {
+        var regla = SpreadsheetApp.newConditionalFormatRule()
+            .setRanges([hoja.getRange(filaPromedios, indice + 1, 1, 1)])
+            .whenNumberGreaterThan(valor)
+            .setBackground(color)
+            .build();
+        reglasFormato.push(regla);
+    }
+
+    agregarReglaFormato(encabezados.indexOf("gpu_utilization_percentage"), 90, "#f4c7c3");
+    agregarReglaFormato(encabezados.indexOf("normalized_gpu_time"), 70, "#fce8b2");
+
+    hoja.setConditionalFormatRules(reglasFormato);
+}
+/**
+ * 8️⃣ Crear gráficos (4 gráficos asegurados)
+ */
+function crearGraficos(hoja, encabezados, nuevosDatos) {
+    if (nuevosDatos.length === 0) {
+        Logger.log("No hay datos disponibles para graficar.");
+        return;
+    }
+
+    var posicionFila = hoja.getLastRow() + 5; // 📌 Ubicar los gráficos después de la última fila ocupada
+
+    // 📊 1️⃣ Gráfico: GPU Utilization y Normalized GPU Time
+    let columnasGrafico1_Y = ["gpu_utilization_percentage", "normalized_gpu_time", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico1_Y, "GPU Utilization & Normalized Render Time", "Time (ms)", "Valores", posicionFila);
+    posicionFila += 20;
+
+    // 📊 2️⃣ Gráfico: FPS y Stale Frames
+    let columnasGrafico2_Y = ["average_frame_rate", "stale_frame_count", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico2_Y, "FPS & Stale Frames Over Time", "Time (ms)", "FPS & Stale Frames", posicionFila);
+    posicionFila += 20;
+
+    // 📊 3️⃣ Gráfico: CPU vs GPU Utilization
+    let columnasGrafico3_Y = ["cpu_utilization_percentage", "gpu_utilization_percentage", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico3_Y, "CPU vs GPU Utilization", "Time (ms)", "Utilization (%)", posicionFila);
+    posicionFila += 20;
+
+    // 📊 4️⃣ Gráfico: Early Frames vs Stale Frames Consecutive
+    let columnasGrafico4_Y = ["early_frame_count", "stale_frames_consecutive", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico4_Y, "Early Frames vs Stale Frames Consecutive", "Time (ms)", "Frames Count", posicionFila);
+}
+
+/**
+ * 📊 Función para gráficos múltiples (corrige la leyenda con nombres correctos)
+ */
+function crearGraficoMultiple(hoja, colX, colYs, titulo, ejeX, ejeY, filaGrafico) {
+    var datos = hoja.getDataRange().getValues();
+    var encabezados = datos[0]; // ✅ Obtener encabezados correctamente
+
+    var indexX = encabezados.indexOf(colX) + 1;
+    var indicesY = colYs.map(colY => encabezados.indexOf(colY) + 1);
+
+    if (indexX === 0 || indicesY.includes(0)) {
+        Logger.log("⚠ No se encontraron columnas necesarias para el gráfico: " + titulo);
+        return;
+    }
+
+    // ✅ Seleccionar rango de datos incluyendo la fila de encabezado
+    var rangoTiempo = hoja.getRange(1, indexX, hoja.getLastRow()); // 📌 Desde la fila 1 para la leyenda
+    var rangosY = indicesY.map(indexY => hoja.getRange(1, indexY, hoja.getLastRow()));
+
+    var chartBuilder = hoja.newChart()
+        .setChartType(Charts.ChartType.LINE)
+        .addRange(rangoTiempo);
+
+    // ✅ Agregar las series con etiquetas correctas en la leyenda
+    rangosY.forEach((rangoY, index) => {
+        chartBuilder.addRange(rangoY);
+        chartBuilder.setOption(`series.${index}.labelInLegend`, encabezados[indicesY[index] - 1]); // Asigna nombres correctos
+    });
+
+    chartBuilder
+        .setPosition(filaGrafico, 1, 0, 0)
+        .setOption('title', titulo)
+        .setOption('hAxis', { title: ejeX })
+        .setOption('vAxis', { title: ejeY })
+        .setOption('legend', { position: 'right' }) // ✅ Asegurar que la leyenda se muestre
+        .setOption('useFirstRowAsHeaders', true)  // ✅ Incluir la primera fila como encabezado en la leyenda
+        .setOption('series', {
+            0: { color: "red" },
+            1: { color: "blue" },
+            2: { color: "yellow" } // ✅ Definir colores para que sean más fáciles de leer
+        });
+
+    var chart = chartBuilder.build();
+    hoja.insertChart(chart);
+}
+
+
