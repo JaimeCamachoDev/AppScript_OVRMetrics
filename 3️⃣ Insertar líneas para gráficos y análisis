@@ -1,0 +1,13 @@
+/**
+ * 3️⃣ Insertar líneas para gráficos y análisis
+ */
+function insertarLineas(hoja, datos) {
+    var filasParaGraficos = 20 * 4;
+    var filaAnalisisGeneralEstimada = datos.length + 10;
+    var filasNecesarias = filaAnalisisGeneralEstimada + filasParaGraficos + 150;
+    var filasActuales = hoja.getMaxRows();
+
+    if (filasNecesarias > filasActuales) {
+        hoja.insertRowsAfter(filasActuales, filasNecesarias - filasActuales);
+    }
+}
