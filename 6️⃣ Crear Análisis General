@@ -1,0 +1,29 @@
+/**
+ * 6️⃣ Crear Análisis General
+ */
+function crearAnalisisGeneral(hoja, encabezados, nuevosDatos, filaAnalisisColumnas) {
+    var filaAnalisisGeneral = filaAnalisisColumnas + 2;
+    var promedioGPU = parseFloat(nuevosDatos.map(row => row[encabezados.indexOf("gpu_utilization_percentage")])
+                        .filter(v => !isNaN(v)).reduce((a, b) => a + b, 0) / nuevosDatos.length);
+    var promedioFPS = parseFloat(nuevosDatos.map(row => row[encabezados.indexOf("average_frame_rate")])
+                        .filter(v => !isNaN(v)).reduce((a, b) => a + b, 0) / nuevosDatos.length);
+
+    var analisisGeneralTexto = "No se puede realizar análisis general completo por falta de datos.";
+    if (!isNaN(promedioGPU) && !isNaN(promedioFPS)) {
+        if (promedioGPU > 85 && promedioFPS < 60) {
+            analisisGeneralTexto = "⚠️ RENDIMIENTO LIMITADO: GPU alta y FPS bajos. Cuello de botella en GPU.";
+        } else if (promedioGPU > 70 && promedioFPS < 72) {
+            analisisGeneralTexto = "🔶 RENDIMIENTO MODERADO: GPU y FPS aceptables, pero margen de mejora.";
+        } else {
+            analisisGeneralTexto = "✅ BUEN RENDIMIENTO: GPU eficiente y FPS altos. Rendimiento óptimo.";
+        }
+    }
+
+    var rangoAnalisisGeneral = hoja.getRange(filaAnalisisGeneral, 1);
+    rangoAnalisisGeneral.setValue("📌 ANÁLISIS GENERAL: " + analisisGeneralTexto)
+        .setFontWeight("bold")
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+        .setVerticalAlignment("middle")
+        .setHorizontalAlignment("center");
+    hoja.setRowHeight(filaAnalisisGeneral, 50);
+}
