@@ -1,0 +1,67 @@
+/**
+ * 🧮 Calcular promedios a partir de los datos y encabezados
+ */
+function calcularPromedios(nuevosDatos, encabezados) {
+  return encabezados.map((col, i) => {
+    if (i === 0) return "Promedio:";
+    const valores = nuevosDatos.map(row => row[i]).filter(v => !isNaN(v) && v !== "");
+    return valores.length > 0
+      ? (valores.reduce((a, b) => a + parseFloat(b), 0) / valores.length).toFixed(2)
+      : "N/A";
+  });
+}
+
+/**
+ * 5️⃣ Aplicar Análisis por Columna (incluye el valor del promedio)
+ */
+function crearAnalisisColumnas(hoja, encabezados, promedios) {
+  const filaAnalisisColumnas = hoja.getLastRow() + 2;
+
+  const analisisColumnasTexto = encabezados.map((columna, index) => {
+    if (index === 0) return "Análisis por Columna:";
+
+    const valorPromedio = parseFloat(promedios[index]);
+    if (isNaN(valorPromedio)) return "N/A";
+
+    let texto = `${valorPromedio} - `;
+
+    switch (columna) {
+
+      case "app_gpu_time_microseconds":
+          return texto + (valorPromedio > 8000 ? "⛔ GPU Render Time ALTO (>8000µs) - Cuello de botella" :
+                  valorPromedio > 5000 ? "⚠️ GPU Render Moderado - Posible optimización" :
+                                "✅ GPU Render Bajo - Buen rendimiento");
+
+      case "gpu_utilization_percentage":
+        return texto + (valorPromedio > 90 ? "⛔ GPU ALTA (>90%) - Cuello de botella" :
+                        valorPromedio > 50 ? "⚠️ GPU Moderada - Optimización posible" :
+                                             "✅ GPU Baja (<50%) - Rendimiento óptimo");
+      case "average_frame_rate":
+        return texto + (valorPromedio < 30 ? "⛔ FPS BAJOS (<30) - Rendimiento deficiente" :
+                        valorPromedio < 60 ? "⚠️ FPS Moderados - Mejorar fluidez" :
+                                             "✅ FPS Altos (>60) - Buen rendimiento");
+      case "cpu_utilization_percentage":
+        return texto + (valorPromedio > 90 ? "⛔ CPU ALTA (>90%) - Cuello de botella" :
+                        valorPromedio > 50 ? "⚠️ CPU Moderada - Rendimiento OK" :
+                                             "✅ CPU Baja (<50%) - Rendimiento óptimo");
+      case "available_memory_MB":
+        return texto + (valorPromedio < 500 ? "⛔ MEMORIA BAJA (<500MB) - Riesgo de problemas" :
+                        valorPromedio < 1000 ? "⚠️ MEMORIA Moderada (<1GB) - Vigilar uso" :
+                                               "✅ MEMORIA OK (>=1GB) - Sin problemas");
+      case "normalized_gpu_time":
+        return texto + (valorPromedio > 90 ? "⛔ GPU TIME ALTO - Cuello de botella" :
+                        valorPromedio > 70 ? "⚠️ GPU TIME Moderado - Optimización posible" :
+                                             "✅ GPU TIME Bajo - Rendimiento óptimo");
+      default:
+        return `Prom: ${valorPromedio}`;
+    }
+  });
+
+  const rangoAnalisisColumnas = hoja.getRange(filaAnalisisColumnas, 1, 1, encabezados.length);
+  rangoAnalisisColumnas.setValues([analisisColumnasTexto])
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+    .setVerticalAlignment("middle")
+    .setHorizontalAlignment("center");
+
+  return filaAnalisisColumnas;
+}
