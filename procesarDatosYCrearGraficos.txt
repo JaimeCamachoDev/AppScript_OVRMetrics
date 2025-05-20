@@ -1,0 +1,37 @@
+function procesarDatosYCrearGraficos() {
+    var hoja = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var datos = hoja.getDataRange().getValues();
+
+    if (datos.length <= 1) {
+        Logger.log("No hay datos suficientes en la hoja.");
+        return;
+    }
+
+    // 1️⃣ Analizar los datos
+    var resultado = analizarDatos(datos);
+    var encabezados = resultado.encabezados;
+    var nuevosDatos = resultado.nuevosDatos;
+
+    // 2️⃣ Calcular valores adicionales (Normalized GPU Time y Señal Activa)
+    calcularValoresAdicionales(encabezados, nuevosDatos);
+
+    // 3️⃣ Insertar líneas para gráficos y análisis
+    insertarLineas(hoja, datos);
+
+    // 4️⃣ Escribir datos procesados en la hoja
+    escribirDatos(hoja, encabezados, nuevosDatos);
+
+    // 5️⃣ Aplicar análisis por columna
+  const promedios = calcularPromedios(nuevosDatos, encabezados);
+  const filaPromedios = crearAnalisisColumnas(hoja, encabezados, promedios);
+
+
+    // 6️⃣ Crear análisis general
+    crearAnalisisGeneral(hoja, encabezados, nuevosDatos, filaPromedios);
+
+    // 7️⃣ Aplicar formato condicional
+    aplicarFormatoCondicional(hoja, encabezados, filaPromedios);
+
+    // 8️⃣ Crear gráficos
+    crearGraficos(hoja, encabezados, nuevosDatos);
+}
