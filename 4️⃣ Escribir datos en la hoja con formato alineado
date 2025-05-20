@@ -1,0 +1,16 @@
+/**
+ * 4️⃣ Escribir datos en la hoja con formato alineado
+ */
+function escribirDatos(hoja, encabezados, nuevosDatos) {
+    hoja.clear();
+    hoja.getRange(1, 1, 1, encabezados.length).setValues([encabezados]);
+    hoja.getRange(2, 1, nuevosDatos.length, encabezados.length).setValues(nuevosDatos);
+
+    // Aplicar formato a la tabla
+    var rangoTabla = hoja.getRange(1, 1, nuevosDatos.length + 1, encabezados.length);
+    rangoTabla.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+              .setVerticalAlignment("middle")
+              .setHorizontalAlignment("center");
+
+    hoja.autoResizeColumns(1, encabezados.length);
+}
