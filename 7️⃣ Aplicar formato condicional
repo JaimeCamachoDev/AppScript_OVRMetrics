@@ -1,0 +1,20 @@
+/**
+ * 7️⃣ Aplicar formato condicional
+ */
+function aplicarFormatoCondicional(hoja, encabezados, filaPromedios) {
+    var reglasFormato = [];
+
+    function agregarReglaFormato(indice, valor, color) {
+        var regla = SpreadsheetApp.newConditionalFormatRule()
+            .setRanges([hoja.getRange(filaPromedios, indice + 1, 1, 1)])
+            .whenNumberGreaterThan(valor)
+            .setBackground(color)
+            .build();
+        reglasFormato.push(regla);
+    }
+
+    agregarReglaFormato(encabezados.indexOf("gpu_utilization_percentage"), 90, "#f4c7c3");
+    agregarReglaFormato(encabezados.indexOf("normalized_gpu_time"), 70, "#fce8b2");
+
+    hoja.setConditionalFormatRules(reglasFormato);
+}
