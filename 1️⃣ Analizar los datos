@@ -1,0 +1,21 @@
+/**
+ * 1️⃣ Analizar los datos
+ */
+function analizarDatos(datos) {
+    var ultimaColumnaIndex = datos[0].length - 1;
+    var ultimaColumnaNombre = datos[0][ultimaColumnaIndex];
+
+    var columnasDeseadas = [
+        "Time Stamp", "app_gpu_time_microseconds", "timewarp_gpu_time_microseconds",
+        "gpu_utilization_percentage", "cpu_utilization_percentage", "average_frame_rate",
+        "stale_frame_count", "available_memory_MB", "screen_tear_count", "max_repeated_frames",
+        "early_frame_count", "stale_frames_consecutive"
+    ];
+    columnasDeseadas.push(ultimaColumnaNombre);
+
+    var encabezados = columnasDeseadas.slice();
+    var indices = columnasDeseadas.map(col => datos[0].indexOf(col)).filter(i => i !== -1);
+    var nuevosDatos = datos.slice(1).map(fila => indices.map(i => fila[i]));
+
+    return { encabezados, nuevosDatos };
+}
