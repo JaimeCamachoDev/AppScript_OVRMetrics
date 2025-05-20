@@ -1,0 +1,31 @@
+/**
+ * 2️⃣ Calcular Normalized GPU Time y Señal Activa
+ */
+function calcularValoresAdicionales(encabezados, nuevosDatos) {
+    var indiceGpuTime = encabezados.indexOf("app_gpu_time_microseconds");
+    var indiceUltimaColumna = encabezados.length - 1;
+    var maxGpuTime = NaN;
+
+    // Agregar columnas si aún no están presentes
+    if (!encabezados.includes("normalized_gpu_time")) {
+        encabezados.splice(encabezados.length - 1, 0, "normalized_gpu_time");
+    }
+    if (!encabezados.includes("señal_activa")) {
+        encabezados.push("señal_activa");
+    }
+
+    if (indiceGpuTime !== -1) {
+        maxGpuTime = Math.max(...nuevosDatos.map(row => row[indiceGpuTime]));
+    }
+
+    for (var i = 0; i < nuevosDatos.length; i++) {
+        // Normalized GPU Time
+        var normalizedValue = (!isNaN(maxGpuTime) && maxGpuTime !== 0) ? Math.round((nuevosDatos[i][indiceGpuTime] / maxGpuTime) * 100) : 0;
+        nuevosDatos[i].splice(nuevosDatos[i].length - 1, 0, normalizedValue);
+
+        // Señal Activa
+        var indiceSeñal = nuevosDatos[i].length - 1;
+        var tieneSeñal = (nuevosDatos[i][indiceSeñal] && nuevosDatos[i][indiceSeñal].toString().trim() !== "") ? 100 : 0;
+        nuevosDatos[i].push(tieneSeñal);
+    }
+}
