@@ -1,0 +1,76 @@
+/**
+ * 8️⃣ Crear gráficos (4 gráficos asegurados)
+ */
+function crearGraficos(hoja, encabezados, nuevosDatos) {
+    if (nuevosDatos.length === 0) {
+        Logger.log("No hay datos disponibles para graficar.");
+        return;
+    }
+
+    var posicionFila = hoja.getLastRow() + 5; // 📌 Ubicar los gráficos después de la última fila ocupada
+
+    // 📊 1️⃣ Gráfico: GPU Utilization y Normalized GPU Time
+    let columnasGrafico1_Y = ["gpu_utilization_percentage", "normalized_gpu_time", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico1_Y, "GPU Utilization & Normalized Render Time", "Time (ms)", "Valores", posicionFila);
+    posicionFila += 20;
+
+    // 📊 2️⃣ Gráfico: FPS y Stale Frames
+    let columnasGrafico2_Y = ["average_frame_rate", "stale_frame_count", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico2_Y, "FPS & Stale Frames Over Time", "Time (ms)", "FPS & Stale Frames", posicionFila);
+    posicionFila += 20;
+
+    // 📊 3️⃣ Gráfico: CPU vs GPU Utilization
+    let columnasGrafico3_Y = ["cpu_utilization_percentage", "gpu_utilization_percentage", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico3_Y, "CPU vs GPU Utilization", "Time (ms)", "Utilization (%)", posicionFila);
+    posicionFila += 20;
+
+    // 📊 4️⃣ Gráfico: Early Frames vs Stale Frames Consecutive
+    let columnasGrafico4_Y = ["early_frame_count", "stale_frames_consecutive", "señal_activa"];
+    crearGraficoMultiple(hoja, "Time Stamp", columnasGrafico4_Y, "Early Frames vs Stale Frames Consecutive", "Time (ms)", "Frames Count", posicionFila);
+}
+
+/**
+ * 📊 Función para gráficos múltiples (corrige la leyenda con nombres correctos)
+ */
+function crearGraficoMultiple(hoja, colX, colYs, titulo, ejeX, ejeY, filaGrafico) {
+    var datos = hoja.getDataRange().getValues();
+    var encabezados = datos[0]; // ✅ Obtener encabezados correctamente
+
+    var indexX = encabezados.indexOf(colX) + 1;
+    var indicesY = colYs.map(colY => encabezados.indexOf(colY) + 1);
+
+    if (indexX === 0 || indicesY.includes(0)) {
+        Logger.log("⚠ No se encontraron columnas necesarias para el gráfico: " + titulo);
+        return;
+    }
+
+    // ✅ Seleccionar rango de datos incluyendo la fila de encabezado
+    var rangoTiempo = hoja.getRange(1, indexX, hoja.getLastRow()); // 📌 Desde la fila 1 para la leyenda
+    var rangosY = indicesY.map(indexY => hoja.getRange(1, indexY, hoja.getLastRow()));
+
+    var chartBuilder = hoja.newChart()
+        .setChartType(Charts.ChartType.LINE)
+        .addRange(rangoTiempo);
+
+    // ✅ Agregar las series con etiquetas correctas en la leyenda
+    rangosY.forEach((rangoY, index) => {
+        chartBuilder.addRange(rangoY);
+        chartBuilder.setOption(`series.${index}.labelInLegend`, encabezados[indicesY[index] - 1]); // Asigna nombres correctos
+    });
+
+    chartBuilder
+        .setPosition(filaGrafico, 1, 0, 0)
+        .setOption('title', titulo)
+        .setOption('hAxis', { title: ejeX })
+        .setOption('vAxis', { title: ejeY })
+        .setOption('legend', { position: 'right' }) // ✅ Asegurar que la leyenda se muestre
+        .setOption('useFirstRowAsHeaders', true)  // ✅ Incluir la primera fila como encabezado en la leyenda
+        .setOption('series', {
+            0: { color: "red" },
+            1: { color: "blue" },
+            2: { color: "yellow" } // ✅ Definir colores para que sean más fáciles de leer
+        });
+
+    var chart = chartBuilder.build();
+    hoja.insertChart(chart);
+}
