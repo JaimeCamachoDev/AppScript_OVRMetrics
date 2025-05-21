@@ -9,4 +9,4 @@
 
 _Script for OVR Metrics_
 
-[Plantilla Google](https://docs.google.com/spreadsheets/d/1h8ZbjseN19Wsh2SDeQPGN5gP2F9hPnXVY85pLLXE1xw/edit?usp=sharing)
+[Plantilla Google](https://docs.google.com/spreadsheets/d/1h8ZbjseN19Wsh2SDeQPGN5gP2F9hPnXVY85pLLXE1xw/copy)
